@@ -18,6 +18,7 @@ futures-util = "0.3"
 futures-executor = "0.3"
 futures-channel = "0.3"
 tokio = { version = "0.2", features = [ "full" ] }
+futures-oneshot = { git = "https://github.com/quininer/oneshot" }
 
 [[bench]]
 name = "queue"
