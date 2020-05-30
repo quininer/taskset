@@ -1,4 +1,3 @@
-use std::mem;
 use std::pin::Pin;
 use std::marker::Unpin;
 use std::collections::VecDeque;
@@ -18,7 +17,7 @@ pub struct TaskSet<Fut> {
 }
 
 struct ReadyQueue {
-    queue: VecDeque<usize>,
+    queue: Vec<usize>,
     waker: Option<Waker>
 }
 
@@ -32,7 +31,7 @@ impl<Fut> Default for TaskSet<Fut> {
         TaskSet {
             dequeue: VecDeque::new(),
             ready_queue: Arc::new(Mutex::new(ReadyQueue {
-                queue: VecDeque::new(),
+                queue: Vec::new(),
                 waker: None
             })),
             tasks: Slab::new()
@@ -50,7 +49,7 @@ impl<Fut> TaskSet<Fut> {
         TaskSet {
             dequeue: VecDeque::with_capacity(cap),
             ready_queue: Arc::new(Mutex::new(ReadyQueue {
-                queue: VecDeque::with_capacity(cap),
+                queue: Vec::with_capacity(cap),
                 waker: None
             })),
             tasks: Slab::new()
@@ -98,11 +97,7 @@ impl<Fut: Future + Unpin> Stream for TaskSet<Fut> {
             }
 
             // task dequeue
-            if this.dequeue.is_empty() {
-                mem::swap(&mut this.dequeue, &mut rq.queue);
-            } else {
-                this.dequeue.extend(rq.queue.drain(..));
-            }
+            this.dequeue.extend(rq.queue.drain(..));
         }
 
         while let Some(id) = this.dequeue.pop_front() {
@@ -131,7 +126,7 @@ impl ArcWake for TaskWaker {
         if let Some(rq) = arc_self.ready_queue.upgrade() {
             let mut rq = rq.lock();
 
-            rq.queue.push_back(arc_self.id);
+            rq.queue.push(arc_self.id);
 
             if let Some(waker) = rq.waker.take() {
                 waker.wake();
