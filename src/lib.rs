@@ -2,7 +2,7 @@ use std::mem;
 use std::pin::Pin;
 use std::marker::Unpin;
 use std::collections::VecDeque;
-use std::sync::{ Arc, Weak };
+use std::sync::{ atomic, Arc, Weak };
 use std::task::{ Context, Waker, Poll };
 use std::future::Future;
 use parking_lot::Mutex;
@@ -24,6 +24,7 @@ struct ReadyQueue {
 
 struct TaskWaker {
     id: usize,
+    queued: atomic::AtomicBool,
     ready_queue: Weak<Mutex<ReadyQueue>>
 }
 
@@ -62,6 +63,7 @@ impl<Fut> TaskSet<Fut> {
         let id = entry.key();
         let waker = Arc::new(TaskWaker {
             id,
+            queued: atomic::AtomicBool::new(true),
             ready_queue: Arc::downgrade(&self.ready_queue)
         });
         entry.insert((fut, waker));
@@ -121,8 +123,10 @@ impl<Fut: Future + Unpin> Stream for TaskSet<Fut> {
             };
 
             if let Some((task, waker)) = bomb.tasks.get_mut(id) {
-                let waker = waker_ref(waker);
-                let mut cx = Context::from_waker(&waker);
+                waker.queued.store(false, atomic::Ordering::SeqCst);
+
+                let waker2 = waker_ref(waker);
+                let mut cx = Context::from_waker(&waker2);
 
                 // poll task
                 match Pin::new(task).poll(&mut cx) {
@@ -142,13 +146,15 @@ impl<Fut: Future + Unpin> Stream for TaskSet<Fut> {
 
 impl ArcWake for TaskWaker {
     fn wake_by_ref(arc_self: &Arc<Self>) {
-        if let Some(rq) = arc_self.ready_queue.upgrade() {
-            let mut rq = rq.lock();
+        if !arc_self.queued.swap(true, atomic::Ordering::SeqCst) {
+            if let Some(rq) = arc_self.ready_queue.upgrade() {
+                let mut rq = rq.lock();
 
-            rq.queue.push(arc_self.id);
+                rq.queue.push(arc_self.id);
 
-            if let Some(waker) = rq.waker.take() {
-                waker.wake();
+                if let Some(waker) = rq.waker.take() {
+                    waker.wake();
+                }
             }
         }
     }
