@@ -1,3 +1,4 @@
+use std::mem;
 use std::pin::Pin;
 use std::marker::Unpin;
 use std::collections::VecDeque;
@@ -100,15 +101,33 @@ impl<Fut: Future + Unpin> Stream for TaskSet<Fut> {
             this.dequeue.extend(rq.queue.drain(..));
         }
 
+        // panic bomb
+        struct Bomb<'a, T> {
+            id: usize,
+            tasks: &'a mut Slab<T>
+        }
+
+        impl<'a, Fut> Drop for Bomb<'a, Fut> {
+            #[inline]
+            fn drop(&mut self) {
+                self.tasks.remove(self.id);
+            }
+        }
+
         while let Some(id) = this.dequeue.pop_front() {
-            if let Some((task, waker)) = this.tasks.get_mut(id) {
+            let bomb = Bomb {
+                id,
+                tasks: &mut this.tasks
+            };
+
+            if let Some((task, waker)) = bomb.tasks.get_mut(id) {
                 let waker = waker_ref(waker);
                 let mut cx = Context::from_waker(&waker);
 
                 // poll task
-                if let Poll::Ready(output) = Pin::new(task).poll(&mut cx) {
-                    this.tasks.remove(id);
-                    return Poll::Ready(Some(output));
+                match Pin::new(task).poll(&mut cx) {
+                    Poll::Ready(output) => return Poll::Ready(Some(output)),
+                    Poll::Pending => mem::forget(bomb)
                 }
             }
         }
