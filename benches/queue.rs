@@ -3,6 +3,7 @@ use std::task::Poll;
 use std::collections::VecDeque;
 use criterion::{ criterion_main, criterion_group, Criterion, black_box };
 use tokio::sync::oneshot;
+// use futures_channel::oneshot;
 use futures_util::future;
 use futures_util::stream::StreamExt;
 use futures_executor::block_on;
@@ -16,7 +17,7 @@ fn bench_queue(c: &mut Criterion) {
 
         b.iter(|| {
             let mut txs = VecDeque::with_capacity(NUM);
-            let mut rxs = TaskSet::with_capacity(NUM / 2);
+            let mut rxs = TaskSet::new();
 
             for _ in 0..NUM {
                 let (tx, rx) = oneshot::channel();
@@ -37,7 +38,7 @@ fn bench_queue(c: &mut Criterion) {
                     }
                 }
                 Poll::Ready(())
-            }))
+            }));
         });
     });
 
@@ -73,5 +74,10 @@ fn bench_queue(c: &mut Criterion) {
 }
 
 
-criterion_group!(queue, bench_queue);
+criterion_group!{
+    name = queue;
+    config = Criterion::default().sample_size(30);
+    targets = bench_queue
+}
+
 criterion_main!(queue);
