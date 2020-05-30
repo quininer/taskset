@@ -73,5 +73,10 @@ fn bench_queue(c: &mut Criterion) {
 }
 
 
-criterion_group!(queue, bench_queue);
+criterion_group!{
+    name = queue;
+    config = Criterion::default().sample_size(30);
+    targets = bench_queue
+}
+
 criterion_main!(queue);
